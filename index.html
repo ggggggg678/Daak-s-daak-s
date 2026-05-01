@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head><link rel="stylesheet" href="yungking.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>Huperoon-Church - Registre de Présence</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="logo-area">
+      <div class="logo-icon">⛪</div>
+      <div class="title">
+        <h1>Huperoon-<span>Church</span></h1>
+        <p>Registre de présence</p>
+      </div>
+    </div>
+    <div class="date-badge" id="liveDate"></div>
+  </div>
+
+  <div class="stats-banner">
+    <div class="stats-banner-left">
+      <span>🙌</span>
+      <div>
+        <div class="stats-number" id="totalCount">0</div>
+        <div class="stats-label">personnes enregistrées</div>
+      </div>
+    </div>
+    <div class="sync-badge">
+      <div>🌍 Partagé</div>
+      <div id="syncIndicator">📡 Connecté</div>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-info"><h3 id="statMembers">0</h3><p>Membres</p></div><div class="stat-icon">⛪</div></div>
+    <div class="stat-card"><div class="stat-info"><h3 id="statVisitors">0</h3><p>Visiteurs</p></div><div class="stat-icon">🫂</div></div>
+    <div class="stat-card"><div class="stat-info"><h3 id="statToday">0</h3><p>Aujourd'hui</p></div><div class="stat-icon">📅</div></div>
+    <div class="stat-card"><div class="stat-info"><h3 id="statTotal">0</h3><p>Total</p></div><div class="stat-icon">📊</div></div>
+  </div>
+
+  <div class="config-panel">
+    <div class="config-header" onclick="toggleConfig()">
+      <h3>⚙️ Configuration GitHub (Partage)</h3>
+      <span id="configArrow">▼</span>
+    </div>
+    <div id="configContent" style="display: block;">
+      <p style="font-size: 12px; color: #666; margin-bottom: 12px;">🔐 Pour que TOUT LE MONDE voie les mêmes données :</p>
+      <input type="text" id="githubToken" class="config-input" placeholder="GitHub Token (ghp_...)" value="">
+      <input type="text" id="githubGistId" class="config-input" placeholder="Gist ID" value="">
+      <button class="btn-config" onclick="saveConfig()">💾 Enregistrer & Activer le partage</button>
+      <button class="btn-demo" onclick="useDemoMode()">📱 Mode démo (local seulement)</button>
+      <p style="font-size: 11px; color: #999; margin-top: 10px; text-align: center;">👉 Créez un Gist secret avec fichier "presences.json" et contenu "[]"</p>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-header"><h2>✝️ Nouvelle inscription</h2><p>Enregistrez une personne - Tout le monde la verra</p></div>
+    <div class="form-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Nom *</label><input type="text" id="inputNom" placeholder="Nom"></div>
+        <div class="form-group"><label>Prénom *</label><input type="text" id="inputPrenom" placeholder="Prénom"></div>
+        <div class="form-group"><label>Lieu</label><input type="text" id="inputLieu" placeholder="Quartier / Ville"></div>
+        <div class="form-group"><label>Contact</label><input type="text" id="inputContact" placeholder="Email ou Tél"></div>
+        <div class="form-group">
+          <label>Statut</label>
+          <select id="inputType">
+            <option value="member">Membre Huperoon-Church</option>
+            <option value="visitor">Visiteur (autre église)</option>
+          </select>
+        </div>
+        <div class="form-group" id="visitorChurchGroup" style="display:none;">
+          <label>Nom de son église</label>
+          <input type="text" id="inputVisitorChurch" placeholder="Nom de l'église">
+        </div>
+      </div>
+      <button class="btn-submit" id="btnSubmit">✨ Enregistrer la présence</button>
+    </div>
+  </div>
+
+  <div class="list-section">
+    <div class="list-toolbar">
+      <h3>📋 Liste des présences <span class="badge-github" id="storageBadge">📱 Local</span></h3>
+      <button class="btn-config" style="background:#28a745; padding:6px 12px; width:auto;" onclick="exportToPDF()">📄 Exporter PDF</button>
+    </div>
+    <div class="filters">
+      <button class="filter-btn active" data-filter="all">👥 Tous</button>
+      <button class="filter-btn" data-filter="member">⛪ Membres</button>
+      <button class="filter-btn" data-filter="visitor">🫂 Visiteurs</button>
+    </div>
+    <input type="text" id="searchInput" class="search-input" placeholder="🔍 Rechercher...">
+    <div class="table-wrapper">
+      <table id="mainTable">
+        <thead><tr><th></th><th>Nom</th><th>Lieu</th><th>Contact</th><th>Statut</th><th>Date</th><th></th></tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state">📭 Aucune personne enregistrée</div>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+// ========== VARIABLES ==========
+let githubToken = localStorage.getItem('github_token') || '';
+let githubGistId = localStorage.getItem('github_gist_id') || '';
+let people = [];
+let currentFilter = 'all';
+
+// ========== FONCTIONS ==========
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function escapeHtml(s) { if (!s) return ''; return String(s).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+// Gestionnaire d'affichage église visiteur
+document.getElementById('inputType').addEventListener('change', function() {
+  document.getElementById('visitorChurchGroup').style.display = this.value === 'visitor' ? 'block' : 'none';
+});
+
+function clearForm() {
+  document.getElementById('inputNom').value = '';
+  document.getElementById('inputPrenom').value = '';
+  document.getElementById('inputLieu').value = '';
+  document.getElementById('inputContact').value = '';
+  document.getElementById('inputVisitorChurch').value = '';
+  document.getElementById('inputType').value = 'member';
+  document.getElementById('visitorChurchGroup').style.display = 'none';
+}
+
+// Mise à jour des statistiques
+function updateStats() {
+  const total = people.length;
+  const members = people.filter(p => p.is_member === true || p.is_member === 1).length;
+  const visitors = people.filter(p => p.is_member === false || p.is_member === 0).length;
+  const today = people.filter(p => {
+    const pDate = new Date(p.date);
+    const todayDate = new Date();
+    return pDate.toDateString() === todayDate.toDateString();
+  }).length;
+  
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statMembers').textContent = members;
+  document.getElementById('statVisitors').textContent = visitors;
+  document.getElementById('statToday').textContent = today;
+  document.getElementById('totalCount').textContent = total;
+}
+
+// Sauvegarde locale
+function saveToLocal() {
+  localStorage.setItem('huperoon_data', JSON.stringify(people));
+}
+
+// Chargement local
+function loadFromLocal() {
+  const saved = localStorage.getItem('huperoon_data');
+  if (saved && JSON.parse(saved).length > 0) {
+    people = JSON.parse(saved);
+  } else if (saved) {
+    people = JSON.parse(saved);
+  } else {
+    people = [];
+  }
+  updateStats();
+  renderList();
+  document.getElementById('storageBadge').textContent = '📱 Local';
+  document.getElementById('storageBadge').style.background = '#6c757d';
+}
+
+// Sauvegarde sur GitHub (partagé)
+async function saveToGitHub() {
+  if (!githubToken || !githubGistId) return false;
+  try {
+    const res = await fetch(`https://api.github.com/gists/${githubGistId}`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `token ${githubToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: { 'presences.json': { content: JSON.stringify(people, null, 2) } } })
+    });
+    if (res.ok) {
+      document.getElementById('syncIndicator').innerHTML = '✅ Synchronisé';
+      setTimeout(() => { document.getElementById('syncIndicator').innerHTML = '📡 Connecté'; }, 2000);
+      return true;
+    }
+  } catch(e) { console.error(e); }
+  return false;
+}
+
+// Chargement depuis GitHub (partagé)
+async function loadFromGitHub() {
+  if (!githubToken || !githubGistId) return false;
+  try {
+    const res = await fetch(`https://api.github.com/gists/${githubGistId}`, {
+      headers: { 'Authorization': `token ${githubToken}` }
+    });
+    if (res.ok) {
+      const gist = await res.json();
+      const content = gist.files['presences.json']?.content;
+      if (content) {
+        const data = JSON.parse(content);
+        if (Array.isArray(data)) {
+          people = data;
+          saveToLocal();
+          updateStats();
+          renderList();
+          document.getElementById('storageBadge').textContent = '🌍 Cloud (Partagé)';
+          document.getElementById('storageBadge').style.background = '#28a745';
+          document.getElementById('syncIndicator').innerHTML = '✅ Synchronisé';
+          return true;
+        }
+      }
+    }
+  } catch(e) { console.error(e); }
+  return false;
+}
+
+// Synchronisation
+async function syncToCloud() {
+  if (!githubToken || !githubGistId) {
+    showToast('Configurez GitHub pour le partage', 'error');
+    return false;
+  }
+  showToast('Synchronisation...', 'info');
+  if (await saveToGitHub()) {
+    await loadFromGitHub();
+    showToast('✅ Données synchronisées avec le cloud !', 'success');
+    return true;
+  }
+  showToast('❌ Erreur de synchronisation', 'error');
+  return false;
+}
+
+// Sauvegarde de la configuration
+function saveConfig() {
+  const token = document.getElementById('githubToken').value.trim();
+  const gistId = document.getElementById('githubGistId').value.trim();
+  if (token && gistId) {
+    githubToken = token;
+    githubGistId = gistId;
+    localStorage.setItem('github_token', token);
+    localStorage.setItem('github_gist_id', gistId);
+    showToast('Configuration sauvegardée', 'success');
+    loadFromGitHub().then(success => {
+      if (!success) showToast('Vérifiez votre token et Gist ID', 'error');
+    });
+  } else {
+    showToast('Entrez token et Gist ID', 'error');
+  }
+}
+
+function toggleConfig() {
+  const content = document.getElementById('configContent');
+  const arrow = document.getElementById('configArrow');
+  if (content.style.display === 'none') {
+    content.style.display = 'block';
+    arrow.textContent = '▼';
+  } else {
+    content.style.display = 'none';
+    arrow.textContent = '▶';
+  }
+}
+
+function useDemoMode() {
+  githubToken = '';
+  githubGistId = '';
+  localStorage.removeItem('github_token');
+  localStorage.removeItem('github_gist_id');
+  document.getElementById('githubToken').value = '';
+  document.getElementById('githubGistId').value = '';
+  loadFromLocal();
+  showToast('Mode démo - Données locales uniquement', 'info');
+}
+
+// Ajouter une personne
+async function addPerson() {
+  const nom = document.getElementById('inputNom').value.trim();
+  const prenom = document.getElementById('inputPrenom').value.trim();
+  
+  if (!nom || !prenom) {
+    showToast('Nom et prénom requis', 'error');
+    return;
+  }
+  
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  btn.textContent = '⏳ Envoi...';
+  
+  const isVisitor = document.getElementById('inputType').value === 'visitor';
+  const newPerson = {
+    id: Date.now(),
+    nom: nom,
+    prenom: prenom,
+    lieu: document.getElementById('inputLieu').value.trim() || '',
+    contact: document.getElementById('inputContact').value.trim() || '',
+    is_member: !isVisitor,
+    church_name: isVisitor ? (document.getElementById('inputVisitorChurch').value.trim() || 'Non spécifiée') : null,
+    date: new Date().toISOString(),
+    status: 'present'
+  };
+  
+  people.unshift(newPerson);
+  saveToLocal();
+  
+  // Si configuré, synchroniser avec le cloud
+  if (githubToken && githubGistId) {
+    await saveToGitHub();
+    // Recharger pour avoir les dernières données de tous
+    await loadFromGitHub();
+  }
+  
+  updateStats();
+  renderList();
+  clearForm();
+  showToast(`✅ ${prenom} ${nom} enregistré(e) !`, 'success');
+  
+  btn.disabled = false;
+  btn.textContent = '✨ Enregistrer la présence';
+}
+
+// Supprimer une personne
+async function deletePerson(id) {
+  if (!confirm('Supprimer cette inscription ?')) return;
+  people = people.filter(p => p.id != id);
+  saveToLocal();
+  if (githubToken && githubGistId) {
+    await saveToGitHub();
+    await loadFromGitHub();
+  }
+  updateStats();
+  renderList();
+  showToast('Supprimé', 'success');
+}
+
+// Affichage de la liste
+function renderList() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  let filtered = [...people];
+  
+  if (currentFilter === 'member') filtered = filtered.filter(p => p.is_member === true || p.is_member === 1);
+  if (currentFilter === 'visitor') filtered = filtered.filter(p => p.is_member === false || p.is_member === 0);
+  
+  if (search) {
+    filtered = filtered.filter(p => 
+      (p.nom || '').toLowerCase().includes(search) ||
+      (p.prenom || '').toLowerCase().includes(search) ||
+      (p.lieu || '').toLowerCase().includes(search)
+    );
+  }
+  
+  const tbody = document.getElementById('tableBody');
+  const empty = document.getElementById('emptyState');
+  const table = document.getElementById('mainTable');
+  
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    table.style.display = 'none';
+    return;
+  }
+  
+  empty.style.display = 'none';
+  table.style.display = 'table';
+  
+  tbody.innerHTML = filtered.map(p => {
+    const initials = ((p.nom || '')[0] || '') + ((p.prenom || '')[0] || '');
+    const badge = (p.is_member === true || p.is_member === 1)
+      ? '<span class="member-badge">⛪ Membre</span>'
+      : `<span class="visitor-badge">🫂 Visiteur (${escapeHtml(p.church_name || '?')})</span>`;
+    const date = new Date(p.date).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    return `
+      <tr>
+        <td><div class="avatar">${initials.toUpperCase() || '?'}</div></td>
+        <td><strong>${escapeHtml(p.nom)}</strong> ${escapeHtml(p.prenom)}</td>
+        <td>${escapeHtml(p.lieu) || '—'}</td>
+        <td>${escapeHtml(p.contact) || '—'}</td>
+        <td>${badge}</td>
+        <td style="font-size:11px">${date}</td>
+        <td><button class="delete-btn" onclick="deletePerson(${p.id})">🗑️</button></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function setFilter(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === filter);
+  });
+  renderList();
+}
+
+// Export PDF
+async function exportToPDF() {
+  if (people.length === 0) { showToast('Aucune donnée', 'error'); return; }
+  showToast('Génération PDF...', 'info');
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const now = new Date();
+    doc.setFontSize(20); doc.setTextColor(102,126,234); doc.text('Huperoon-Church', 20, 20);
+    doc.setFontSize(12); doc.setTextColor(0,0,0); doc.text('Registre de Présence', 20, 30);
+    doc.setFontSize(9); doc.setTextColor(100,100,100);
+    doc.text(`Généré le ${now.toLocaleString('fr-FR')} - ${people.length} personnes`, 20, 38);
+    doc.autoTable({
+      head: [['N°', 'Nom', 'Prénom', 'Lieu', 'Contact', 'Statut', 'Date']],
+      body: people.map((p, i) => [i+1, p.nom, p.prenom, p.lieu||'—', p.contact||'—', p.is_member ? 'Membre' : 'Visiteur', new Date(p.date).toLocaleString('fr-FR')]),
+      startY: 45,
+      theme: 'striped',
+      headStyles: { fillColor: [102,126,234] },
+      styles: { fontSize: 8 }
+    });
+    doc.save(`huperoon_${now.toISOString().slice(0,10)}.pdf`);
+    showToast('PDF généré', 'success');
+  } catch(e) { showToast('Erreur PDF', 'error'); }
+}
+
+// Horloge
+function updateClock() {
+  document.getElementById('liveDate').innerHTML = new Date().toLocaleString('fr-FR', { weekday:'short', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+}
+
+// Synchronisation automatique (toutes les 30 secondes)
+let autoSync = null;
+function startAutoSync() {
+  if (autoSync) clearInterval(autoSync);
+  autoSync = setInterval(() => {
+    if (githubToken && githubGistId) {
+      loadFromGitHub();
+    }
+  }, 30000);
+}
+
+// ========== INITIALISATION ==========
+// Charger la configuration sauvegardée
+const savedToken = localStorage.getItem('github_token');
+const savedGistId = localStorage.getItem('github_gist_id');
+if (savedToken && savedGistId) {
+  githubToken = savedToken;
+  githubGistId = savedGistId;
+  document.getElementById('githubToken').value = savedToken;
+  document.getElementById('githubGistId').value = savedGistId;
+  loadFromGitHub().then(success => {
+    if (!success) loadFromLocal();
+    startAutoSync();
+  });
+} else {
+  loadFromLocal();
+}
+
+// Événements
+document.getElementById('btnSubmit').onclick = addPerson;
+document.getElementById('searchInput').oninput = renderList;
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.onclick = () => setFilter(btn.dataset.filter);
+});
+
+updateClock();
+setInterval(updateClock, 1000);
+
+// Exposer les fonctions
+window.deletePerson = deletePerson;
+window.saveConfig = saveConfig;
+window.toggleConfig = toggleConfig;
+window.useDemoMode = useDemoMode;
+window.exportToPDF = exportToPDF;
+</script>
+</body>
+</html>
